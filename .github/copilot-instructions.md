@@ -40,7 +40,7 @@ This is a **KuCoin Perpetual Futures Trading Dashboard v3.5.0** - a semi-automat
 
 1. **Server (server.js)**
    - KuCoinFuturesAPI class: API communication with retry logic
-   - TradeMath utility: V3.5 formula implementations from PDF documentation
+   - TradeMath utility object: V3.5 formula implementations from PDF documentation
    - MarketDataManager: Candle data and technical indicators
    - PositionManager: Position lifecycle and risk management
    - RetryQueueManager: Failed operation retry with exponential backoff

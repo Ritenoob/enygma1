@@ -191,7 +191,7 @@ class StopReplaceCoordinator {
       OrderValidator.validateExitOrder(sanitizedEmergency);
 
       // Place emergency market order
-      const result = await this.api.placeOrder(emergencyParams);
+      const result = await this.api.placeOrder(sanitizedEmergency);
       
       if (result.data && result.data.orderId) {
         this.broadcastAlert('emergency', `✓ Emergency market order placed for ${symbol}: ${result.data.orderId}`);

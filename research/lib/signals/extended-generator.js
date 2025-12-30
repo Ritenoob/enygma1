@@ -32,7 +32,7 @@ function generateSignal(indicators, weights) {
   // DOM Scoring (LIVE-ONLY)
   if (weights.dom && weights.dom.enabled && weights.dom.max > 0) {
     if (!weights.dom.liveOnlyValidation) {
-      console.warn('[SIGNAL] DOM scoring attempted without liveOnlyValidation flag!');
+      console.warn('[SIGNAL] WARNING: DOM scoring requires liveOnlyValidation=true flag. This data should only be used for live validation, never for backtest optimization.');
     }
     const domContrib = scoreDOM(indicators.dom, weights.dom);
     score += domContrib.contribution;

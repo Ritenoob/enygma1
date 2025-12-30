@@ -157,7 +157,13 @@ class DOMCollector extends EventEmitter {
     console.log(`Connecting DOM collector for ${this.symbols.length} symbols...`);
     
     // TODO: Implement actual WebSocket connection to KuCoin order book feeds
-    // This is a placeholder for the connection logic
+    // Required implementation:
+    // 1. Connect to KuCoin Level 2 Market Data feed (wss://ws-api-futures.kucoin.com)
+    // 2. Subscribe to /contractMarket/level2 topic for each symbol
+    // 3. Handle incremental updates with sequence numbers
+    // 4. Implement snapshot fallback if sequence gap detected
+    // 5. Apply authentication token from public token endpoint
+    // Reference: https://docs.kucoin.com/futures/#level-2-market-data
     
     this.connected = true;
     this.emit('connected');

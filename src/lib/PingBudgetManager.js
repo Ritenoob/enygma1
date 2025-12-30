@@ -23,10 +23,18 @@ const WS_CONFIG = {
  * Adaptive Token Bucket for REST API rate limiting
  */
 class AdaptiveTokenBucket {
+  // Rate limit configuration constants
+  static DEFAULT_UTILIZATION = 0.70;
+  static MIN_UTILIZATION = 0.40;
+  static DEGRADE_STEP = 0.15;
+  static MAX_DEGRADE_FACTOR = 0.5;
+  static RECOVERY_INTERVAL_MS = 60000;
+  static RECOVERY_STEP = 0.05;
+  
   constructor(config = {}) {
     this.quotaPerWindow = config.quotaPerWindow || 2000;  // VIP0 default
     this.windowMs = config.windowMs || 30000;  // 30 seconds
-    this.utilizationTarget = config.utilizationTarget || 0.70;
+    this.utilizationTarget = config.utilizationTarget || AdaptiveTokenBucket.DEFAULT_UTILIZATION;
     this.headroom = config.headroom || 0.30;  // 30% reserved
     
     this.tokens = this.quotaPerWindow * this.utilizationTarget;
@@ -90,8 +98,14 @@ class AdaptiveTokenBucket {
    */
   handleRateLimitError() {
     this.consecutive429s++;
-    const degradeFactor = Math.min(0.5, this.consecutive429s * 0.15);
-    this.utilizationTarget = Math.max(0.40, 0.70 - degradeFactor);
+    const degradeFactor = Math.min(
+      AdaptiveTokenBucket.MAX_DEGRADE_FACTOR, 
+      this.consecutive429s * AdaptiveTokenBucket.DEGRADE_STEP
+    );
+    this.utilizationTarget = Math.max(
+      AdaptiveTokenBucket.MIN_UTILIZATION, 
+      AdaptiveTokenBucket.DEFAULT_UTILIZATION - degradeFactor
+    );
     
     // Reset tokens to new target
     this.tokens = Math.min(this.tokens, this.quotaPerWindow * this.utilizationTarget);
@@ -105,9 +119,12 @@ class AdaptiveTokenBucket {
     const timeSinceLastCheck = now - this.lastRecoveryCheck;
     
     // Check every 60 seconds
-    if (timeSinceLastCheck >= 60000 && this.consecutive429s > 0) {
+    if (timeSinceLastCheck >= AdaptiveTokenBucket.RECOVERY_INTERVAL_MS && this.consecutive429s > 0) {
       this.consecutive429s = Math.max(0, this.consecutive429s - 1);
-      this.utilizationTarget = Math.min(0.70, this.utilizationTarget + 0.05);
+      this.utilizationTarget = Math.min(
+        AdaptiveTokenBucket.DEFAULT_UTILIZATION, 
+        this.utilizationTarget + AdaptiveTokenBucket.RECOVERY_STEP
+      );
       this.lastRecoveryCheck = now;
     }
   }

@@ -267,7 +267,15 @@ export class BacktestEngine {
   }
   
   /**
-   * Calculate indicators (simplified - reuses existing indicator logic)
+   * Calculate indicators (FRAMEWORK PLACEHOLDER)
+   * 
+   * NOTE: This is a simplified placeholder implementation.
+   * In production, this should use:
+   * 1. TechnicalIndicators class from server.js, OR
+   * 2. New indicator implementations from research/lib/indicators
+   * 
+   * Current implementation returns mock values to demonstrate engine framework.
+   * Replace with actual indicator calculations before production use.
    */
   private calculateIndicators(candles: Candle[]): any {
     const closes = candles.map(c => c.close);

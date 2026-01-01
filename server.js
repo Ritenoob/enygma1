@@ -1,8 +1,23 @@
 // ============================================================================
 // KuCoin Perpetual Futures Dashboard - Semi-Automated Trading System
-// Version: 3.5.2
+// Version: 3.6.0
 // 
-// CHANGELOG FROM V3.5.1:
+// CHANGELOG FROM V3.5.2:
+// - **V3.6.0 NEW FEATURES:**
+// - Fixed .well-known DevTools 404 errors (returns JSON instead of HTML)
+// - Live Strategy Optimizer System for parallel variant testing
+// - OptimizerConfig: Parameter constraints, variant generation, validation
+// - ScoringEngine: Composite scoring, statistical significance, confidence gating
+// - TelemetryFeed: Real-time metrics streaming via WebSocket
+// - LiveOptimizerController: Parallel strategy testing with safety mechanisms
+// - 5 new API endpoints: /api/optimizer/{status,results,start,stop,promote}
+// - Signal metadata tagging (experimental flag, variant ID, confidence score)
+// - Paper trading default with configurable safety limits
+// - Rate limiting (30 API calls/min) and throttling
+// - Statistical validation (n≥50, p<0.05) for strategy promotion
+// - Comprehensive test suite: 39 new tests (56 total passing)
+// - Complete documentation: docs/OPTIMIZER_GUIDE.md
+// 
 // - **V3.5.2 ENHANCEMENTS:**
 // - Precision-safe financial math with decimal.js (eliminates floating-point errors)
 // - Stop order state machine for protection against cancel-then-fail exposure
@@ -1775,7 +1790,7 @@ function broadcastInitialState(ws) {
       trading: CONFIG.TRADING,
       timeframes: Object.keys(CONFIG.TIMEFRAMES),
       currentTimeframe,
-      version: '3.5.2'
+      version: '3.6.0'
     }
   }));
 }
@@ -2282,7 +2297,7 @@ wss.on('connection', async (ws) => {
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
-    version: '3.5.2',
+    version: '3.6.0',
     uptime: process.uptime(),
     symbols: Object.keys(marketManagers).length,
     positions: activePositions.size,
@@ -2294,7 +2309,7 @@ app.get('/health', (req, res) => {
 app.get('/api/status', (req, res) => {
   res.json({
     status: 'online',
-    version: '3.5.2',
+    version: '3.6.0',
     symbols: Object.keys(marketManagers),
     positions: activePositions.size,
     balance: accountBalance,
@@ -2683,8 +2698,15 @@ function stopIntervals() {
 async function startup() {
   console.log('');
   console.log('╔═══════════════════════════════════════════════════════════════╗');
-  console.log('║     KuCoin Perpetual Futures Dashboard v3.5.2                 ║');
+  console.log('║     KuCoin Perpetual Futures Dashboard v3.6.0                 ║');
   console.log('║     Semi-Automated Trading System                             ║');
+  console.log('║                                                               ║');
+  console.log('║     V3.6 NEW FEATURES:                                        ║');
+  console.log('║     • Live Strategy Optimizer System                          ║');
+  console.log('║     • Parallel variant testing with statistical validation    ║');
+  console.log('║     • Real-time metrics streaming via WebSocket               ║');
+  console.log('║     • Fixed .well-known DevTools 404 errors                   ║');
+  console.log('║     • 5 new /api/optimizer/* endpoints                        ║');
   console.log('║                                                               ║');
   console.log('║     V3.5 ENHANCEMENTS:                                        ║');
   console.log('║     • Fee-adjusted break-even calculation                     ║');

@@ -12,6 +12,7 @@ This version implements **production-grade reliability and precision** with deci
 | **Order Validation Layer** | All exit orders validated and enforced with `reduceOnly: true` flag |
 | **Config Validation** | Configuration validated at startup with clear error messages |
 | **Property-Based Tests** | Comprehensive edge case coverage with fast-check library |
+| **Live Optimizer** | Run multiple strategy variants in parallel paper trading mode |
 | **Stop Order State Machine** | Prevents cancel-then-fail exposure (library ready, integration optional) |
 | **Secure Logging** | API key/secret redaction utilities (library ready, integration optional) |
 | **Hot/Cold Path Architecture** | Event bus for latency-sensitive operations (library ready, integration optional) |
@@ -129,6 +130,60 @@ fc.assert(
 - Position value calculations
 - Net P&L comparisons
 - Price rounding properties
+
+### Live Optimizer
+
+The Live Optimizer runs multiple strategy variants in parallel paper trading mode to find optimal signal configurations:
+
+```javascript
+// Enable optimizer in .env
+OPTIMIZER_ENABLED=true
+OPTIMIZER_MAX_VARIANTS=4
+```
+
+**Features:**
+- **4 Strategy Profiles:** default, conservative, aggressive, balanced
+- **Paper Trading:** All variants trade with simulated positions (no real orders)
+- **Independent State:** Each variant maintains its own positions and metrics
+- **Real-time Tracking:** Win rate, avg ROI, total P&L per variant
+- **API Endpoints:** Monitor performance via `/api/optimizer/status` and `/api/optimizer/performance`
+
+**How it Works:**
+1. Each variant uses a different signal weight profile from `signal-weights.js`
+2. Optimizer receives live market data and generates signals independently for each variant
+3. Positions are simulated with realistic fees and slippage via `ExecutionSimulator`
+4. Metrics are tracked: trades count, win rate, avg ROI, total P&L
+5. Performance comparison shows which profile performs best
+
+**API Endpoints:**
+```bash
+# Get optimizer status and variant states
+GET /api/optimizer/status
+
+# Get performance comparison
+GET /api/optimizer/performance
+
+# Reset all variants
+POST /api/optimizer/reset
+```
+
+**WebSocket Messages:**
+```javascript
+// Request optimizer status
+ws.send({ type: 'get_optimizer_status' })
+
+// Request performance comparison
+ws.send({ type: 'get_optimizer_performance' })
+
+// Reset optimizer
+ws.send({ type: 'reset_optimizer' })
+```
+
+**Safety:**
+- Always runs in paper trading mode by default
+- Real trading is disabled and requires explicit configuration
+- In `DEMO_MODE`, optimizer is forced to paper trade
+- Each variant is isolated - failures don't affect main strategy
 
 ---
 
@@ -250,6 +305,24 @@ cp .env.example .env
 # Edit .env with your KuCoin API credentials
 ```
 
+**Required:**
+```env
+KUCOIN_API_KEY=your_api_key
+KUCOIN_API_SECRET=your_api_secret
+KUCOIN_API_PASSPHRASE=your_passphrase
+```
+
+**Optional:**
+```env
+# Run with synthetic data and mock API (no live orders)
+DEMO_MODE=false
+
+# Enable live optimizer for parallel strategy testing
+OPTIMIZER_ENABLED=false
+OPTIMIZER_MAX_VARIANTS=4
+OPTIMIZER_AUTO_PROMOTE=false
+```
+
 ### 3. Start the Server
 
 ```bash
@@ -346,9 +419,23 @@ kucoin-bot-v35/
 ├── server.js           # Backend server with V3.5 formulas
 ├── index.html          # Dashboard frontend
 ├── package.json        # Dependencies
-├── signal-weights.js   # Signal configuration
+├── signal-weights.js   # Signal configuration with multiple profiles
 ├── positions.json      # Position persistence
 ├── retry_queue.json    # Failed operation queue
+├── src/
+│   ├── lib/
+│   │   ├── DecimalMath.js           # Precision-safe calculations
+│   │   ├── OrderValidator.js        # Order validation & reduceOnly
+│   │   ├── ConfigSchema.js          # Config validation
+│   │   ├── SignalGenerator.js       # Signal generation engine
+│   │   └── ...
+│   ├── optimizer/
+│   │   ├── LiveOptimizerController.js  # Live optimizer manager
+│   │   ├── ExecutionSimulator.js       # Paper trading simulator
+│   │   └── TrailingStopPolicy.js       # Trailing stop logic
+│   └── marketdata/
+│       └── OHLCProvider.js          # OHLC data provider
+├── tests/                           # Test suite
 ├── .env                # API credentials (create from .env.example)
 └── .env.example        # Template for credentials
 ```
@@ -391,6 +478,9 @@ kucoin-bot-v35/
 | `/api/calculate` | POST | Test math calculations |
 | `/api/order` | POST | Place new order |
 | `/api/close` | POST | Close position |
+| `/api/optimizer/status` | GET | Optimizer status and variant states |
+| `/api/optimizer/performance` | GET | Performance comparison across variants |
+| `/api/optimizer/reset` | POST | Reset all optimizer variants |
 
 ---
 
@@ -402,7 +492,15 @@ This software is for educational purposes. Cryptocurrency trading involves subst
 
 ## 📝 Version History
 
-### v3.5.1 (Current)
+### v3.5.2 (Current)
+- **Precision-Safe Math:** All financial calculations use decimal.js
+- **Order Validation:** Exit orders enforced with reduceOnly flag
+- **Config Validation:** Startup validation with clear error messages
+- **Property-Based Tests:** Comprehensive edge case coverage with fast-check
+- **Live Optimizer:** Parallel strategy testing in paper trading mode
+- **Demo Mode:** Synthetic data and mock API for testing
+
+### v3.5.1
 - Demo mode with synthetic KuCoin data and mock trading client
 - Test-friendly startup controls and graceful shutdown improvements
 - Automated formula tests and GitHub Actions CI pipeline

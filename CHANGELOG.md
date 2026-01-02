@@ -7,7 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - V3.6.1 Release (In Progress)
 
-### Planned Features from Open PRs
+### Status: Phase 1 Complete (3 of 9 PRs Integrated)
+
+**Completed Integrations**:
+- ✅ PR #1 - Copilot Instructions & Contribution Guidelines
+- ✅ PR #9 - Version Reference Updates (v3.4 → v3.5)
+- ✅ PR #2 - Python MACD Strategy
+
+**Remaining Integrations** (High Complexity - Requires Sequential Manual Integration):
+- ⏳ PR #6 - StopReplaceCoordinator (medium risk, core safety)
+- ⏳ PR #8 - PingBudgetManager + Extended Indicators (high risk, rate limiting)
+- ⏳ PR #7 - Optimization Engine (medium risk, research module)
+- ⏳ PR #11 - Live Optimizer v3.6.0 (high risk, major conflicts expected)
+- ⏳ PR #13 - Optimizer Integration (high risk, depends on #11)
+- ⏳ PR #10 - Modular Architecture (DEFERRED - extreme risk, conflicts with all)
+
+### Added in Phase 1 (Completed Features)
+
+#### From PR #1 - Copilot Instructions ✅
+- `.github/copilot-instructions.md` - AI assistant context and coding guidelines
+- `.github/CONTRIBUTING.md` - Development workflow and contribution guidelines
+- Project overview, architecture documentation, and trading formula references
+
+#### From PR #9 - Version Reference Updates ✅
+- Updated version references from v3.4.x to v3.5.0+ in comments
+- Improved documentation consistency across codebase
+
+#### From PR #2 - Python MACD Strategy ✅
+- `eth_macd_strategy.py` - MACD + signal strength strategy for ETH/USDT perpetuals @ 100x leverage
+- `requirements.txt` - Python dependencies (kucoin-futures-python, pandas, numpy, python-dotenv, requests)
+- `tests/test_strategy.py` - Unit tests for trailing stop and signal generation
+- Trailing stop system: Activates at +10% ROI, ratchets every +8% ROI
+- Static SL at -9% ROI until trailing engages, TP at +1% ROI
+- Safe by default (`KUCOIN_EXECUTE_TRADES=false` for dry run)
+- Normalized scoring system with three strength thresholds
+- Complete KuCoin Futures API integration
+
+### Planned Features from Remaining PRs
 
 This release aims to integrate features from multiple pull requests:
 

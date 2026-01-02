@@ -7,12 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - V3.6.1 Release (In Progress)
 
-### Status: Phase 1 Complete (3 of 9 PRs Integrated)
+### Status: Phase 1 Complete (2 of 8 PRs Integrated)
 
 **Completed Integrations**:
 - ✅ PR #1 - Copilot Instructions & Contribution Guidelines
 - ✅ PR #9 - Version Reference Updates (v3.4 → v3.5)
-- ✅ PR #2 - Python MACD Strategy
 
 **Remaining Integrations** (High Complexity - Requires Sequential Manual Integration):
 - ⏳ PR #6 - StopReplaceCoordinator (medium risk, core safety)
@@ -32,16 +31,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### From PR #9 - Version Reference Updates ✅
 - Updated version references from v3.4.x to v3.5.0+ in comments
 - Improved documentation consistency across codebase
-
-#### From PR #2 - Python MACD Strategy ✅
-- `eth_macd_strategy.py` - MACD + signal strength strategy for ETH/USDT perpetuals @ 100x leverage
-- `requirements.txt` - Python dependencies (kucoin-futures-python, pandas, numpy, python-dotenv, requests)
-- `tests/test_strategy.py` - Unit tests for trailing stop and signal generation
-- Trailing stop system: Activates at +10% ROI, ratchets every +8% ROI
-- Static SL at -9% ROI until trailing engages, TP at +1% ROI
-- Safe by default (`KUCOIN_EXECUTE_TRADES=false` for dry run)
-- Normalized scoring system with three strength thresholds
-- Complete KuCoin Futures API integration
 
 ### Planned Features from Remaining PRs
 
@@ -94,12 +83,6 @@ This release aims to integrate features from multiple pull requests:
 - Strategy router with dynamic profile switching
 - Four pre-configured strategy profiles
 - Configurable signal generator with pluggable weights
-
-#### From PR #2 - Python MACD Strategy
-- Python MACD + signal-strength strategy for ETH/USDT perpetuals
-- 100x leverage support with trailing stops
-- KuCoin REST API integration
-- Unit tests for strategy validation
 
 #### From PR #13 - Full Optimizer System Integration
 - Integrated LiveOptimizerController with main server

@@ -24,3 +24,17 @@ research/configs/top_configs/*.json
 
 # Temporary files
 /tmp/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-wheel-metadata/
+*.log
+*.sqlite
+*.db

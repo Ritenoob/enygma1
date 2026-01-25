@@ -9,28 +9,34 @@ const { ConfigSchema, validateConfig, validatePartialConfig, getSchemaDocumentat
 const SecureLogger = require('./SecureLogger');
 const { TradingEventBus, getEventBus } = require('./EventBus');
 const SignalGenerator = require('./SignalGenerator');
+const { PingBudgetManager, AdaptiveTokenBucket, WS_CONFIG } = require('./PingBudgetManager');
 
 module.exports = {
   // Math utilities
   DecimalMath,
-  
+
   // State machines
   StopOrderStateMachine,
-  
+
   // Validation
   OrderValidator,
   ConfigSchema,
   validateConfig,
   validatePartialConfig,
   getSchemaDocumentation,
-  
+
   // Logging
   SecureLogger,
-  
+
   // Event system
   TradingEventBus,
   getEventBus,
-  
+
   // Signal generation
-  SignalGenerator
+  SignalGenerator,
+
+  // Rate limiting
+  PingBudgetManager,
+  AdaptiveTokenBucket,
+  WS_CONFIG
 };

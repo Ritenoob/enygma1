@@ -7,11 +7,13 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "test": "node --test",
+    "test:rate-limit": "node --test tests/pingBudgetManager*.test.js",
     "research:fetch-ohlcv": "ts-node research/scripts/fetch-data.ts",
     "research:backtest": "ts-node research/scripts/run-backtest.ts",
     "research:optimize": "ts-node research/scripts/run-optimize.ts",
     "research:forward-shadow": "ts-node research/scripts/run-forward.ts",
     "research:report": "ts-node research/scripts/generate-report.ts",
+    "research:shadow": "node research/scripts/run-shadow.js",
     "test:research": "jest --config jest.research.config.js",
     "test:invariants": "jest --config jest.research.config.js --testPathPattern=property"
   },

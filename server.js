@@ -1,23 +1,8 @@
 // ============================================================================
 // KuCoin Perpetual Futures Dashboard - Semi-Automated Trading System
-// Version: 3.6.0
+// Version: 3.5.2
 // 
-// CHANGELOG FROM V3.5.2:
-// - **V3.6.0 NEW FEATURES:**
-// - Fixed .well-known DevTools 404 errors (returns JSON instead of HTML)
-// - Live Strategy Optimizer System for parallel variant testing
-// - OptimizerConfig: Parameter constraints, variant generation, validation
-// - ScoringEngine: Composite scoring, statistical significance, confidence gating
-// - TelemetryFeed: Real-time metrics streaming via WebSocket
-// - LiveOptimizerController: Parallel strategy testing with safety mechanisms
-// - 5 new API endpoints: /api/optimizer/{status,results,start,stop,promote}
-// - Signal metadata tagging (experimental flag, variant ID, confidence score)
-// - Paper trading default with configurable safety limits
-// - Rate limiting (30 API calls/min) and throttling
-// - Statistical validation (n≥50, p<0.05) for strategy promotion
-// - Comprehensive test suite: 39 new tests (56 total passing)
-// - Complete documentation: docs/OPTIMIZER_GUIDE.md
-// 
+// CHANGELOG FROM V3.5.1:
 // - **V3.5.2 ENHANCEMENTS:**
 // - Precision-safe financial math with decimal.js (eliminates floating-point errors)
 // - Stop order state machine for protection against cancel-then-fail exposure
@@ -57,14 +42,9 @@ const DecimalMath = require('./src/lib/DecimalMath');
 const { validateConfig } = require('./src/lib/ConfigSchema');
 const SecureLogger = require('./src/lib/SecureLogger');
 const OrderValidator = require('./src/lib/OrderValidator');
-// Note: StopOrderStateMachine and EventBus are initialized per-position/global
-
-// ============================================================================
-// OPTIMIZER MODULES (disabled by default)
-// ============================================================================
-const OptimizerConfig = require('./src/optimizer/OptimizerConfig');
+const SignalGenerator = require('./src/lib/SignalGenerator');
 const LiveOptimizerController = require('./src/optimizer/LiveOptimizerController');
-const TelemetryFeed = require('./src/optimizer/TelemetryFeed');
+// Note: StopOrderStateMachine and EventBus are initialized per-position/global
 
 // ============================================================================
 // CONFIGURATION
@@ -142,12 +122,7 @@ const CONFIG = {
   
   // Data file for position persistence
   POSITIONS_FILE: './positions.json',
-  RETRY_QUEUE_FILE: './retry_queue.json',
-  
-  // Optimizer settings (disabled by default)
-  OPTIMIZER: {
-    ENABLED: process.env.OPTIMIZER_ENABLED === 'true' || false
-  }
+  RETRY_QUEUE_FILE: './retry_queue.json'
 };
 
 // ============================================================================
@@ -172,30 +147,12 @@ app.use(express.json());
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
-  // Content Security Policy - allow inline scripts and styles for dashboard
-  res.setHeader('Content-Security-Policy', 
-    "default-src 'self'; " +
-    "script-src 'self' 'unsafe-inline'; " +
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
-    "font-src 'self' https://fonts.gstatic.com; " +
-    "connect-src 'self' ws: wss:; " +
-    "img-src 'self' data:;"
-  );
   next();
 });
 
 // Favicon handler
 app.get('/favicon.ico', (req, res) => {
   res.status(204).end();
-});
-
-// .well-known handler for DevTools and other well-known paths
-app.get('/.well-known/*', (req, res) => {
-  res.status(404).json({ 
-    error: 'Not Found',
-    path: req.path,
-    message: 'The requested .well-known resource does not exist'
-  });
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
@@ -215,6 +172,11 @@ const KUCOIN_API_KEY = process.env.KUCOIN_API_KEY;
 const KUCOIN_API_SECRET = process.env.KUCOIN_API_SECRET;
 const KUCOIN_API_PASSPHRASE = process.env.KUCOIN_API_PASSPHRASE;
 
+// Optimizer configuration
+const OPTIMIZER_ENABLED = process.env.OPTIMIZER_ENABLED === 'true';
+const OPTIMIZER_MAX_VARIANTS = parseInt(process.env.OPTIMIZER_MAX_VARIANTS || '4', 10);
+const OPTIMIZER_AUTO_PROMOTE = process.env.OPTIMIZER_AUTO_PROMOTE === 'true';
+
 if ((!KUCOIN_API_KEY || !KUCOIN_API_SECRET || !KUCOIN_API_PASSPHRASE) && !DEMO_MODE) {
   console.error('╔═══════════════════════════════════════════════════════════════╗');
   console.error('║  ERROR: Missing KuCoin API credentials                        ║');
@@ -230,6 +192,10 @@ if (DEMO_MODE) {
   console.warn('[INIT] Demo mode enabled. Using mock KuCoin client and synthetic market data. No live orders will be sent.');
 }
 
+if (OPTIMIZER_ENABLED) {
+  console.log('[INIT] Live Optimizer enabled. Will run experimental strategy variants in paper trading mode.');
+}
+
 // ============================================================================
 // GLOBAL STATE
 // ============================================================================
@@ -243,11 +209,6 @@ const positionMonitor = new EventEmitter();
 
 let currentTimeframe = '5min';
 let accountBalance = 0;
-
-// ============================================================================
-// OPTIMIZER CONTROLLER (initialized later after other components)
-// ============================================================================
-let optimizerController = null;
 
 // ============================================================================
 // V3.5.2: PRECISION-SAFE MATH UTILITIES USING DECIMAL.JS
@@ -759,6 +720,28 @@ class RetryQueueManager {
 const retryQueueManager = new RetryQueueManager();
 
 // ============================================================================
+// LIVE OPTIMIZER INSTANCE
+// ============================================================================
+let liveOptimizer = null;
+
+if (OPTIMIZER_ENABLED) {
+  // Initialize optimizer with paper trading mode
+  // Force paper trading in DEMO_MODE, otherwise use config
+  const optimizerConfig = {
+    paperTrading: DEMO_MODE || true,  // Always paper trade unless explicitly configured
+    realTradingEnabled: false,         // Never enable real trading by default
+    maxConcurrentVariants: OPTIMIZER_MAX_VARIANTS,
+    profiles: ['default', 'conservative', 'aggressive', 'balanced'],
+    fillModel: 'taker',
+    positionSize: { min: 0.5, max: 2.0, default: 1.0 },
+    leverage: { min: 5, max: 20, default: 10 }
+  };
+  
+  liveOptimizer = new LiveOptimizerController(optimizerConfig);
+  console.log('[OPTIMIZER] Initialized with paper trading mode');
+}
+
+// ============================================================================
 // TECHNICAL INDICATORS
 // ============================================================================
 class TechnicalIndicators {
@@ -906,132 +889,9 @@ class TechnicalIndicators {
 // ============================================================================
 // SIGNAL GENERATOR (-100 to +100)
 // ============================================================================
-class SignalGenerator {
-  static generate(indicators) {
-    let score = 0;
-    const breakdown = [];
-
-    // RSI (±25 points)
-    if (indicators.rsi < 30) {
-      score += 25;
-      breakdown.push({ indicator: 'RSI', value: indicators.rsi.toFixed(1), contribution: 25, reason: 'Oversold (<30)', type: 'bullish' });
-    } else if (indicators.rsi < 40) {
-      score += 15;
-      breakdown.push({ indicator: 'RSI', value: indicators.rsi.toFixed(1), contribution: 15, reason: 'Approaching oversold', type: 'bullish' });
-    } else if (indicators.rsi > 70) {
-      score -= 25;
-      breakdown.push({ indicator: 'RSI', value: indicators.rsi.toFixed(1), contribution: -25, reason: 'Overbought (>70)', type: 'bearish' });
-    } else if (indicators.rsi > 60) {
-      score -= 15;
-      breakdown.push({ indicator: 'RSI', value: indicators.rsi.toFixed(1), contribution: -15, reason: 'Approaching overbought', type: 'bearish' });
-    } else {
-      breakdown.push({ indicator: 'RSI', value: indicators.rsi.toFixed(1), contribution: 0, reason: 'Neutral (40-60)', type: 'neutral' });
-    }
-
-    // Williams %R (±20 points)
-    if (indicators.williamsR < -80) {
-      score += 20;
-      breakdown.push({ indicator: 'Williams %R', value: indicators.williamsR.toFixed(1), contribution: 20, reason: 'Oversold (<-80)', type: 'bullish' });
-    } else if (indicators.williamsR > -20) {
-      score -= 20;
-      breakdown.push({ indicator: 'Williams %R', value: indicators.williamsR.toFixed(1), contribution: -20, reason: 'Overbought (>-20)', type: 'bearish' });
-    } else {
-      breakdown.push({ indicator: 'Williams %R', value: indicators.williamsR.toFixed(1), contribution: 0, reason: 'Neutral', type: 'neutral' });
-    }
-
-    // MACD (±20 points)
-    if (indicators.macd > 0 && indicators.macdHistogram > 0) {
-      score += 20;
-      breakdown.push({ indicator: 'MACD', value: indicators.macd.toFixed(2), contribution: 20, reason: 'Bullish momentum', type: 'bullish' });
-    } else if (indicators.macd < 0 && indicators.macdHistogram < 0) {
-      score -= 20;
-      breakdown.push({ indicator: 'MACD', value: indicators.macd.toFixed(2), contribution: -20, reason: 'Bearish momentum', type: 'bearish' });
-    } else {
-      breakdown.push({ indicator: 'MACD', value: indicators.macd.toFixed(2), contribution: 0, reason: 'Neutral/Crossover', type: 'neutral' });
-    }
-
-    // Awesome Oscillator (±15 points)
-    if (indicators.ao > 0) {
-      score += 15;
-      breakdown.push({ indicator: 'AO', value: indicators.ao.toFixed(2), contribution: 15, reason: 'Positive momentum', type: 'bullish' });
-    } else {
-      score -= 15;
-      breakdown.push({ indicator: 'AO', value: indicators.ao.toFixed(2), contribution: -15, reason: 'Negative momentum', type: 'bearish' });
-    }
-
-    // EMA Trend (±20 points)
-    if (indicators.ema50 > indicators.ema200) {
-      score += 20;
-      breakdown.push({ indicator: 'EMA Trend', value: 'EMA50 > EMA200', contribution: 20, reason: 'Bullish trend (Golden Cross)', type: 'bullish' });
-    } else if (indicators.ema50 < indicators.ema200) {
-      score -= 20;
-      breakdown.push({ indicator: 'EMA Trend', value: 'EMA50 < EMA200', contribution: -20, reason: 'Bearish trend (Death Cross)', type: 'bearish' });
-    } else {
-      breakdown.push({ indicator: 'EMA Trend', value: 'EMA50 ≈ EMA200', contribution: 0, reason: 'Neutral', type: 'neutral' });
-    }
-
-    // Stochastic (±10 points)
-    if (indicators.stochK < 20 && indicators.stochK > indicators.stochD) {
-      score += 10;
-      breakdown.push({ indicator: 'Stochastic', value: indicators.stochK.toFixed(1), contribution: 10, reason: 'Oversold + bullish crossover', type: 'bullish' });
-    } else if (indicators.stochK > 80 && indicators.stochK < indicators.stochD) {
-      score -= 10;
-      breakdown.push({ indicator: 'Stochastic', value: indicators.stochK.toFixed(1), contribution: -10, reason: 'Overbought + bearish crossover', type: 'bearish' });
-    } else {
-      breakdown.push({ indicator: 'Stochastic', value: indicators.stochK.toFixed(1), contribution: 0, reason: 'Neutral', type: 'neutral' });
-    }
-
-    // Bollinger Bands (±10 points)
-    if (indicators.price < indicators.bollingerLower) {
-      score += 10;
-      breakdown.push({ indicator: 'Bollinger', value: 'Below lower', contribution: 10, reason: 'Price below lower band', type: 'bullish' });
-    } else if (indicators.price > indicators.bollingerUpper) {
-      score -= 10;
-      breakdown.push({ indicator: 'Bollinger', value: 'Above upper', contribution: -10, reason: 'Price above upper band', type: 'bearish' });
-    } else {
-      breakdown.push({ indicator: 'Bollinger', value: 'Within bands', contribution: 0, reason: 'Price within bands', type: 'neutral' });
-    }
-
-    // Determine signal type
-    let type = 'NEUTRAL';
-    let confidence = 'LOW';
-    
-    if (score >= 70) { type = 'STRONG_BUY'; confidence = 'HIGH'; }
-    else if (score >= 50) { type = 'BUY'; confidence = 'MEDIUM'; }
-    else if (score >= 30) { type = 'BUY'; confidence = 'LOW'; }
-    else if (score <= -70) { type = 'STRONG_SELL'; confidence = 'HIGH'; }
-    else if (score <= -50) { type = 'SELL'; confidence = 'MEDIUM'; }
-    else if (score <= -30) { type = 'SELL'; confidence = 'LOW'; }
-
-    return {
-      type,
-      score,
-      confidence,
-      breakdown,
-      timestamp: Date.now(),
-      // Signal metadata for optimizer integration
-      experimental: false,           // Set to true for signals from experimental strategies
-      strategyVariantId: null,       // Set to variant ID when from experimental strategy
-      confidenceScore: null          // Numeric confidence score for experimental strategies
-    };
-  }
-  
-  /**
-   * Tag signal as experimental
-   * @param {Object} signal - Base signal to tag
-   * @param {string} variantId - Strategy variant ID
-   * @param {number} confidence - Numeric confidence score (0-1)
-   * @returns {Object} Tagged signal
-   */
-  static tagExperimental(signal, variantId, confidence = null) {
-    return {
-      ...signal,
-      experimental: true,
-      strategyVariantId: variantId,
-      confidenceScore: confidence
-    };
-  }
-}
+// SignalGenerator is now imported from src/lib/SignalGenerator.js
+// Initialize with config from signal-weights.js
+SignalGenerator.initialize();
 
 // ============================================================================
 // MARKET DATA MANAGER
@@ -1731,6 +1591,16 @@ function broadcastMarketData(symbol) {
   // V3.5: Include recommended leverage
   const recommendedLeverage = manager.getRecommendedLeverage(1.0);
   
+  // Feed data to live optimizer if enabled
+  if (OPTIMIZER_ENABLED && liveOptimizer) {
+    try {
+      liveOptimizer.onMarketUpdate(symbol, indicators, manager.currentPrice);
+    } catch (error) {
+      // Don't let optimizer errors crash the main system
+      console.error('[OPTIMIZER ERROR]', error.message);
+    }
+  }
+  
   broadcast({
     type: 'market_update',
     symbol,
@@ -1799,7 +1669,9 @@ function broadcastInitialState(ws) {
       trading: CONFIG.TRADING,
       timeframes: Object.keys(CONFIG.TIMEFRAMES),
       currentTimeframe,
-      version: '3.6.0'
+      signalProfile: SignalGenerator.getActiveProfile(),
+      version: '3.5.2',
+      optimizerEnabled: OPTIMIZER_ENABLED
     }
   }));
 }
@@ -2282,6 +2154,58 @@ wss.on('connection', async (ws) => {
             broadcastLog('info', `Config updated: ${JSON.stringify(data.config)}`);
           }
           break;
+
+        case 'set_signal_profile':
+          if (data.profile) {
+            try {
+              SignalGenerator.setProfile(data.profile);
+              broadcastLog('info', `Signal profile changed to: ${data.profile}`);
+              broadcast({ 
+                type: 'signal_profile_changed', 
+                profile: data.profile,
+                config: SignalGenerator.getActiveProfile()
+              });
+            } catch (error) {
+              broadcastLog('error', `Failed to change profile: ${error.message}`);
+            }
+          }
+          break;
+
+        case 'get_optimizer_status':
+          if (OPTIMIZER_ENABLED && liveOptimizer) {
+            try {
+              const status = liveOptimizer.getStatus();
+              ws.send(JSON.stringify({ type: 'optimizer_status', data: status }));
+            } catch (error) {
+              broadcastLog('error', `Failed to get optimizer status: ${error.message}`);
+            }
+          } else {
+            ws.send(JSON.stringify({ type: 'optimizer_status', data: { enabled: false } }));
+          }
+          break;
+
+        case 'get_optimizer_performance':
+          if (OPTIMIZER_ENABLED && liveOptimizer) {
+            try {
+              const comparison = liveOptimizer.getPerformanceComparison();
+              ws.send(JSON.stringify({ type: 'optimizer_performance', data: comparison }));
+            } catch (error) {
+              broadcastLog('error', `Failed to get optimizer performance: ${error.message}`);
+            }
+          }
+          break;
+
+        case 'reset_optimizer':
+          if (OPTIMIZER_ENABLED && liveOptimizer) {
+            try {
+              liveOptimizer.reset();
+              broadcastLog('info', '[OPTIMIZER] Reset all variants');
+              ws.send(JSON.stringify({ type: 'optimizer_reset', success: true }));
+            } catch (error) {
+              broadcastLog('error', `Failed to reset optimizer: ${error.message}`);
+            }
+          }
+          break;
       }
 
     } catch (error) {
@@ -2306,19 +2230,21 @@ wss.on('connection', async (ws) => {
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
-    version: '3.6.0',
+    version: '3.5.2',
     uptime: process.uptime(),
     symbols: Object.keys(marketManagers).length,
     positions: activePositions.size,
     clients: wsClients.size,
-    retryQueueLength: retryQueueManager.queue.length
+    retryQueueLength: retryQueueManager.queue.length,
+    optimizerEnabled: OPTIMIZER_ENABLED,
+    optimizerStatus: OPTIMIZER_ENABLED && liveOptimizer ? liveOptimizer.getStatus().initialized : false
   });
 });
 
 app.get('/api/status', (req, res) => {
   res.json({
     status: 'online',
-    version: '3.6.0',
+    version: '3.5.2',
     symbols: Object.keys(marketManagers),
     positions: activePositions.size,
     balance: accountBalance,
@@ -2380,6 +2306,31 @@ app.post('/api/config', (req, res) => {
     res.json({ success: true, config: CONFIG.TRADING });
   } else {
     res.status(400).json({ error: 'No config provided' });
+  }
+});
+
+// Signal configuration endpoints
+app.get('/api/signal/config', (req, res) => {
+  res.json({
+    activeProfile: SignalGenerator.getActiveProfile(),
+    availableProfiles: SignalGenerator.getAvailableProfiles(),
+    thresholds: require('./signal-weights').thresholds
+  });
+});
+
+app.post('/api/signal/config', (req, res) => {
+  const { profile } = req.body;
+  
+  if (!profile) {
+    return res.status(400).json({ error: 'Profile name required' });
+  }
+  
+  try {
+    SignalGenerator.setProfile(profile);
+    broadcastLog('info', `Signal profile switched to: ${profile}`);
+    res.json({ success: true, profile: SignalGenerator.getActiveProfile() });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
   }
 });
 
@@ -2511,104 +2462,43 @@ app.post('/api/calculate', (req, res) => {
 // OPTIMIZER API ENDPOINTS
 // ============================================================================
 app.get('/api/optimizer/status', (req, res) => {
+  if (!OPTIMIZER_ENABLED || !liveOptimizer) {
+    return res.json({ enabled: false, message: 'Optimizer not enabled' });
+  }
+  
   try {
-    if (!CONFIG.OPTIMIZER.ENABLED) {
-      return res.json({ 
-        enabled: false, 
-        message: 'Optimizer is disabled. Set OPTIMIZER_ENABLED=true to enable.' 
-      });
-    }
-    
-    if (!optimizerController) {
-      return res.json({ 
-        enabled: true, 
-        running: false, 
-        message: 'Optimizer is not initialized' 
-      });
-    }
-    
-    const status = optimizerController.getStatus();
-    res.json({ 
-      enabled: true, 
-      ...status 
-    });
+    const status = liveOptimizer.getStatus();
+    res.json({ enabled: true, ...status });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.get('/api/optimizer/results', (req, res) => {
+app.get('/api/optimizer/performance', (req, res) => {
+  if (!OPTIMIZER_ENABLED || !liveOptimizer) {
+    return res.json({ enabled: false, message: 'Optimizer not enabled' });
+  }
+  
   try {
-    if (!CONFIG.OPTIMIZER.ENABLED || !optimizerController) {
-      return res.status(400).json({ error: 'Optimizer is not enabled or initialized' });
-    }
-    
-    const results = optimizerController.getResults();
-    res.json(results);
+    const comparison = liveOptimizer.getPerformanceComparison();
+    res.json({ enabled: true, variants: comparison });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.post('/api/optimizer/start', async (req, res) => {
+app.post('/api/optimizer/reset', (req, res) => {
+  if (!OPTIMIZER_ENABLED || !liveOptimizer) {
+    return res.status(400).json({ error: 'Optimizer not enabled' });
+  }
+  
   try {
-    if (!CONFIG.OPTIMIZER.ENABLED) {
-      return res.status(400).json({ error: 'Optimizer is disabled' });
-    }
-    
-    if (!optimizerController) {
-      return res.status(400).json({ error: 'Optimizer is not initialized' });
-    }
-    
-    const options = req.body || {};
-    const result = await optimizerController.start(options);
-    res.json(result);
+    liveOptimizer.reset();
+    broadcastLog('info', '[OPTIMIZER] Reset all variants');
+    res.json({ success: true, message: 'Optimizer reset' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
-
-app.post('/api/optimizer/stop', async (req, res) => {
-  try {
-    if (!CONFIG.OPTIMIZER.ENABLED || !optimizerController) {
-      return res.status(400).json({ error: 'Optimizer is not enabled or initialized' });
-    }
-    
-    const result = await optimizerController.stop();
-    res.json(result);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post('/api/optimizer/promote', async (req, res) => {
-  try {
-    if (!CONFIG.OPTIMIZER.ENABLED || !optimizerController) {
-      return res.status(400).json({ error: 'Optimizer is not enabled or initialized' });
-    }
-    
-    const { variantId } = req.body;
-    
-    if (!variantId) {
-      return res.status(400).json({ error: 'variantId is required' });
-    }
-    
-    const result = await optimizerController.promoteVariant(variantId);
-    res.json(result);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// ============================================================================
-// 404 ERROR HANDLER
-// ============================================================================
-app.use((req, res) => {
-  res.status(404).json({
-    error: 'Not Found',
-    path: req.path,
-    message: 'The requested endpoint does not exist'
-  });
 });
 
 // ============================================================================
@@ -2670,6 +2560,18 @@ function startIntervals() {
     retryQueueManager.process();
   }, 10000));
 
+  // Broadcast optimizer status every 30 seconds if enabled
+  if (OPTIMIZER_ENABLED && liveOptimizer) {
+    intervalRefs.push(setInterval(() => {
+      try {
+        const status = liveOptimizer.getStatus();
+        broadcast({ type: 'optimizer_status', data: status });
+      } catch (error) {
+        // Silent fail - don't spam logs
+      }
+    }, 30000));
+  }
+
   // Sync positions from KuCoin every minute
   intervalRefs.push(setInterval(async () => {
     try {
@@ -2707,15 +2609,8 @@ function stopIntervals() {
 async function startup() {
   console.log('');
   console.log('╔═══════════════════════════════════════════════════════════════╗');
-  console.log('║     KuCoin Perpetual Futures Dashboard v3.6.0                 ║');
+  console.log('║     KuCoin Perpetual Futures Dashboard v3.5.2                 ║');
   console.log('║     Semi-Automated Trading System                             ║');
-  console.log('║                                                               ║');
-  console.log('║     V3.6 NEW FEATURES:                                        ║');
-  console.log('║     • Live Strategy Optimizer System                          ║');
-  console.log('║     • Parallel variant testing with statistical validation    ║');
-  console.log('║     • Real-time metrics streaming via WebSocket               ║');
-  console.log('║     • Fixed .well-known DevTools 404 errors                   ║');
-  console.log('║     • 5 new /api/optimizer/* endpoints                        ║');
   console.log('║                                                               ║');
   console.log('║     V3.5 ENHANCEMENTS:                                        ║');
   console.log('║     • Fee-adjusted break-even calculation                     ║');
@@ -2753,19 +2648,6 @@ async function startup() {
   // Initialize market data
   await initializeAllSymbols();
 
-  // Initialize optimizer if enabled
-  if (CONFIG.OPTIMIZER.ENABLED) {
-    console.log('[INIT] Initializing Live Optimizer...');
-    try {
-      optimizerController = new LiveOptimizerController(OptimizerConfig);
-      console.log('[INIT] ✓ Live Optimizer initialized (not running)');
-    } catch (error) {
-      console.error('[INIT] ✗ Failed to initialize optimizer:', error.message);
-    }
-  } else {
-    console.log('[INIT] Live Optimizer is disabled (set OPTIMIZER_ENABLED=true to enable)');
-  }
-
   if (SHOULD_START_INTERVALS) {
     startIntervals();
   }
@@ -2775,6 +2657,9 @@ async function startup() {
     console.log('');
     console.log('╔═══════════════════════════════════════════════════════════════╗');
     console.log(`║     Dashboard: http://localhost:${CONFIG.PORT}                        ║`);
+    if (OPTIMIZER_ENABLED) {
+      console.log('║     Live Optimizer: ENABLED (Paper Trading)                   ║');
+    }
     console.log('╚═══════════════════════════════════════════════════════════════╝');
     console.log('');
     console.log('[READY] Waiting for dashboard connection...');
@@ -2782,20 +2667,21 @@ async function startup() {
 }
 
 // Graceful shutdown
-process.on('SIGINT', async () => {
+process.on('SIGINT', () => {
   console.log('\n[SHUTDOWN] Saving positions...');
   savePositions();
   console.log('[SHUTDOWN] Saving retry queue...');
   retryQueueManager.save();
-  
-  // Stop optimizer if running
-  if (optimizerController && optimizerController.running) {
-    console.log('[SHUTDOWN] Stopping optimizer...');
-    await optimizerController.stop();
-  }
-  
   console.log('[SHUTDOWN] Closing connections...');
   stopIntervals();
+  
+  // Stop optimizer if running
+  if (OPTIMIZER_ENABLED && liveOptimizer) {
+    console.log('[SHUTDOWN] Stopping optimizer...');
+    // Optimizer cleanup (positions already tracked in variants)
+    liveOptimizer = null;
+  }
+  
   wsClients.forEach(ws => ws.close());
   server.close();
   console.log('[SHUTDOWN] Goodbye!');

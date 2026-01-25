@@ -13,9 +13,16 @@ describe('LiveOptimizerController', () => {
     
     const status = controller.getStatus();
     assert.ok(status.initialized, 'Should be initialized');
-    assert.strictEqual(Object.keys(status.variants).length, 4, 'Should have 4 variants');
-    assert.ok(status.variants.default, 'Should have default variant');
-    assert.ok(status.variants.aggressive, 'Should have aggressive variant');
+    // With parameter testing enabled, we now create 10 variants (limited by maxConcurrentVariants)
+    assert.ok(Object.keys(status.variants).length >= 4, 'Should have at least 4 variants');
+    assert.ok(Object.keys(status.variants).length <= 10, 'Should have at most 10 variants (maxConcurrentVariants)');
+    
+    // Check that we have at least one variant from each main profile
+    const variantIds = Object.keys(status.variants);
+    const hasDefaultVariant = variantIds.some(id => id.includes('default'));
+    const hasAggressiveVariant = variantIds.some(id => id.includes('aggressive'));
+    assert.ok(hasDefaultVariant, 'Should have at least one default variant');
+    assert.ok(hasAggressiveVariant, 'Should have at least one aggressive variant');
   });
 
   test('processes market updates and generates signals', () => {
@@ -223,10 +230,14 @@ describe('LiveOptimizerController', () => {
     const comparison = controller.getPerformanceComparison();
     
     assert.ok(Array.isArray(comparison), 'Should return array');
-    assert.strictEqual(comparison.length, 4, 'Should have 4 variants');
+    // With parameter testing enabled, we now have up to 10 variants
+    assert.ok(comparison.length >= 4, 'Should have at least 4 variants');
+    assert.ok(comparison.length <= 10, 'Should have at most 10 variants');
     assert.ok(comparison[0].profile, 'Should have profile name');
+    assert.ok(comparison[0].variantId, 'Should have variant ID');
     assert.ok(comparison[0].winRate !== undefined, 'Should have win rate');
     assert.ok(comparison[0].totalNetPnl !== undefined, 'Should have total net PnL');
+    assert.ok(comparison[0].sharpeRatio !== undefined, 'Should have Sharpe ratio');
   });
 
   test('maintains variant isolation', () => {

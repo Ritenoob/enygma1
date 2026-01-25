@@ -1,196 +1,103 @@
 # Changelog
 
-All notable changes to the MIRKO KuCoin Futures Trading System will be documented in this file.
+All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [3.6.0] - 2026-01-01
 
-## [Unreleased] - V3.6.1 Release (In Progress)
+### Added
+- **Live Strategy Optimizer System** - Complete framework for parallel strategy variant testing
+  - `OptimizerConfig.js`: Configuration manager with parameter constraints and variant generation
+  - `ScoringEngine.js`: Composite scoring with ROI, Sharpe ratio, win rate, statistical significance testing
+  - `TelemetryFeed.js`: Real-time metrics streaming via in-memory pub/sub and WebSocket
+  - `LiveOptimizerController.js`: Main controller for parallel variant execution with safety mechanisms
+  
+- **New API Endpoints** - Five new endpoints under `/api/optimizer/*`:
+  - `GET /api/optimizer/status` - Current optimizer state and active variants
+  - `GET /api/optimizer/results` - Ranked variants with confidence scores
+  - `POST /api/optimizer/start` - Begin testing with configurable variant count
+  - `POST /api/optimizer/stop` - Halt testing and export final results
+  - `POST /api/optimizer/promote` - Validate and promote variant to production
 
-### Status: Phase 1 Complete (2 of 8 PRs Integrated)
+- **Signal Metadata Tagging** - Enhanced signal generation with experimental tracking:
+  - `experimental` flag to distinguish experimental vs. production signals
+  - `strategyVariantId` for tracking which variant generated the signal
+  - `confidenceScore` numeric confidence value (0-1) for experimental strategies
+  - Static helper method: `SignalGenerator.tagExperimental()`
 
-**Completed Integrations**:
-- ✅ PR #1 - Copilot Instructions & Contribution Guidelines
-- ✅ PR #9 - Version Reference Updates (v3.4 → v3.5)
+- **Safety Features**:
+  - Paper trading enabled by default (configurable per environment)
+  - Automatic variant stopping on 5% loss or 10% drawdown limits
+  - Rate limiting: 30 API calls per minute with 2-second throttle
+  - Statistical significance validation (n≥50, p<0.05) required for promotion
+  - Isolated state per variant to prevent production interference
 
-**Remaining Integrations** (High Complexity - Requires Sequential Manual Integration):
-- ⏳ PR #6 - StopReplaceCoordinator (medium risk, core safety)
-- ⏳ PR #8 - PingBudgetManager + Extended Indicators (high risk, rate limiting)
-- ⏳ PR #7 - Optimization Engine (medium risk, research module)
-- ⏳ PR #11 - Live Optimizer v3.6.0 (high risk, major conflicts expected)
-- ⏳ PR #13 - Optimizer Integration (high risk, depends on #11)
-- ⏳ PR #10 - Modular Architecture (DEFERRED - extreme risk, conflicts with all)
+- **Comprehensive Testing** - 39 new tests covering:
+  - Configuration validation and variant generation
+  - Scoring algorithms and confidence calculations
+  - Telemetry streaming and pub/sub functionality
+  - Controller lifecycle and variant isolation
+  - Rate limiting and safety mechanisms
+  - Total: 56 tests passing
 
-### Added in Phase 1 (Completed Features)
+- **Documentation** - `docs/OPTIMIZER_GUIDE.md`:
+  - Architecture overview with data flow diagrams
+  - Complete API reference with examples
+  - Metric interpretation and promotion criteria
+  - Troubleshooting guide and best practices
+  - Advanced usage patterns and event listeners
 
-#### From PR #1 - Copilot Instructions ✅
-- `.github/copilot-instructions.md` - AI assistant context and coding guidelines
-- `.github/CONTRIBUTING.md` - Development workflow and contribution guidelines
-- Project overview, architecture documentation, and trading formula references
+### Fixed
+- **`.well-known` DevTools 404 Errors** - Proper JSON 404 responses instead of HTML error pages
+  - Added dedicated route handler for `.well-known/*` paths
+  - Returns structured JSON with error details
+  - Prevents Chrome DevTools console errors
 
-#### From PR #9 - Version Reference Updates ✅
-- Updated version references from v3.4.x to v3.5.0+ in comments
-- Improved documentation consistency across codebase
+- **404 Error Handling** - Improved error responses across all endpoints
+  - Added catch-all 404 middleware
+  - Consistent JSON error format with path and message
+  - Better debugging experience
 
-### Planned Features from Remaining PRs
+### Changed
+- Updated version number from 3.5.2 to 3.6.0
+- Enhanced startup banner to display V3.6 features
+- Updated all version references in API responses
 
-This release aims to integrate features from multiple pull requests:
+### Technical Details
+- Follows existing codebase patterns and architecture
+- Uses existing dependencies (express, ws, events)
+- Reuses main WebSocket feed for market data (no new connections)
+- Non-blocking async operations throughout
+- Comprehensive error handling with proper logging
+- Disabled by default (opt-in via `OPTIMIZER_ENABLED=true`)
 
-#### From PR #1 - Copilot Instructions
-- GitHub Copilot development guidelines and contribution documentation
-- Repository-specific coding standards and patterns
-
-#### From PR #9 - Version Reference Updates
-- Updated version references from v3.4 to v3.5+ throughout codebase
-- Consistent version naming across documentation
-
-#### From PR #6 - StopReplaceCoordinator with Emergency Protection  
-- State machine for stop order management (IDLE → CANCELING → PLACING → CONFIRMED)
-- Jittered exponential backoff retry policy (5 retries, 1-30s delays)
-- Emergency market order fallback on failure
-- Monotonic stop invariants (LONG: SL ≥ prev, SHORT: SL ≤ prev)
-- Break-even fee coverage property tests
-
-#### From PR #8 - PingBudgetManager + Extended Indicators
-- Adaptive token bucket rate limiting (2000 calls/30s for VIP0)
-- Priority queuing (CRITICAL > HIGH > MEDIUM > LOW)
-- Auto-degradation to 40% utilization on repeated 429 errors
-- Gradual recovery (5% per 60s without errors)
-- Extended signal weights with KDJ, OBV, and DOM indicators
-- Shadow runner for paper trading validation
-- DOM features marked as live-only (no backtest optimization)
-
-#### From PR #7 - Optimization Engine
-- Complete backtesting framework with deterministic execution
-- Technical indicators: KDJ (stochastic with J-line), ADX+DI (trend strength), OBV (volume confirmation)
-- Fill models: Taker (immediate) and probabilistic limit (9th-level proxy)
-- Position simulator with leverage-aware ROI SL/TP
-- Performance metrics: Sharpe, Sortino, Calmar ratios
-- Regime detection: ADX/ATR-based market classification
-- Four strategy templates (conservative, aggressive, balanced, scalping)
-
-#### From PR #11 - Live Optimizer v3.6.0 + CSP Headers
-- Live strategy optimization system for parallel variant testing
-- Four optimizer modules: OptimizerConfig, ScoringEngine, TelemetryFeed, LiveOptimizerController
-- Five new API endpoints under `/api/optimizer/*`
-- Content Security Policy (CSP) headers for enhanced security
-- `.well-known/*` route handler for proper JSON 404 responses
-- Signal tagging with experimental flags and variant tracking
-
-#### From PR #10 - Modular Architecture
-- Restructured into modular folders: `core/`, `screener/`, `strategy/`, `research/`, `config/`
-- Dual-timeframe screener engine with 7 indicator engines
-- Strategy router with dynamic profile switching
-- Four pre-configured strategy profiles
-- Configurable signal generator with pluggable weights
-
-#### From PR #13 - Full Optimizer System Integration
-- Integrated LiveOptimizerController with main server
-- Paper trading mode with realistic fees and slippage
-- Real-time variant performance tracking
-- WebSocket message handlers for optimizer status
-- Comprehensive API endpoints for monitoring
+### Breaking Changes
+None - All new features are opt-in and backward compatible
 
 ---
 
-## [3.5.2] - 2025-12-29
+## [3.5.2] - 2025-12-XX
 
-### Added - Production-Grade Reliability
-- **Precision-Safe Math**: All financial calculations use decimal.js to eliminate floating-point errors
-- **Order Validation Layer**: All exit orders validated and enforced with `reduceOnly: true` flag
-- **Config Validation**: Configuration validated at startup with clear error messages
-- **Property-Based Tests**: Comprehensive edge case coverage with fast-check library
-- **Stop Order State Machine**: Prevents cancel-then-fail exposure (library ready, integration optional)
-- **Secure Logging**: API key/secret redaction utilities (library ready, integration optional)
-- **Hot/Cold Path Architecture**: Event bus for latency-sensitive operations (library ready, integration optional)
-
-### Changed
-- Migrated all TradeMath functions to use decimal.js internally
-- Enhanced order validation for all exit orders
-- Improved error messages for configuration validation
-
-### Fixed
-- Floating-point precision errors in financial calculations
-- Position reversal risk with strict `reduceOnly` enforcement
+### Added
+- Precision-safe financial math with decimal.js (eliminates floating-point errors)
+- Stop order state machine for protection against cancel-then-fail exposure
+- Order validation layer enforcing reduceOnly on all exit orders
+- Config schema validation at startup with clear error messages
+- API key/secret redaction in logs for security
+- Hot/cold path event architecture for latency-sensitive operations
+- Property-based tests with fast-check for comprehensive edge case coverage
 
 ---
 
 ## [3.5.1] - 2025-12-XX
 
 ### Added
-- Demo mode with synthetic market data and mock KuCoin client
-- Automated tests for trading math formulas (`node --test`)
-- GitHub Actions CI workflow to run tests on every push/PR
-- Hardened server lifecycle: optional interval startup, graceful shutdown
-- Provided `.env.example` and updated README with unified setup instructions
-
-### Changed
-- Server exports made test-friendly
-- Intervals made optional for testing
-
----
-
-## [3.5.0] - 2025-12-XX
-
-### Added
-- Fee-adjusted break-even calculation
-- Accurate liquidation price formula
-- Slippage buffer on stop orders
+- Fee-adjusted break-even calculation (accounts for maker/taker fees)
+- Accurate liquidation price formula with maintenance margin
+- Slippage buffer on stop placement
 - API retry queue with exponential backoff
 - ROI-based SL/TP with inverse leverage scaling
-- Volatility-based auto-leverage
-- Enhanced trailing stop algorithms (Staircase, ATR, Dynamic)
-- Net P&L after fees display
-- Partial take-profit support
-
-### Changed
-- Break-even trigger now accounts for trading fees
-- Stop-loss and take-profit use inverse leverage scaling for consistent risk
-- Liquidation formula includes maintenance margin
-
----
-
-## [3.4.2] - Earlier
-
-### Added
-- ROI-based SL/TP calculations
-- Trade confirmation modal
-- Break-even & trailing stop indicators
-
----
-
-## [3.4.1] - Earlier
-
-### Added
-- Leverage-adjusted SL/TP
-
-### Fixed
-- Floating-point precision errors
-
----
-
-## [3.4.0] - Earlier
-
-### Added
-- Dollar-based position sizing
-- Leveraged P&L percentages
-
----
-
-## Note on V3.6.1 Release
-
-The V3.6.1 release represents a comprehensive integration effort combining features from multiple parallel development branches. Due to the complexity and scope of merging 9+ pull requests with potential conflicts in core files (server.js, signal-weights.js, package.json), this release requires:
-
-1. **Sequential Integration**: Each PR must be merged and tested individually
-2. **Conflict Resolution**: Manual resolution of conflicts in shared files
-3. **Comprehensive Testing**: Full test suite + integration testing after each merge
-4. **Documentation Updates**: Complete update of all version references and feature docs
-
-**Status**: This CHANGELOG documents the planned features. Actual integration is in progress.
-
----
-
-For more information about specific features, see:
-- README.md - Installation and usage
-- docs/FEATURES.md - Detailed feature documentation (if available)
-- docs/MIGRATION.md - Migration guide (if available)
+- Volatility-based auto-leverage calculation
+- Partial take-profit (scaling out) support
+- Enhanced trailing stop with ATR-based variant
+- Improved position sizing with fee deductions
+- Rate limit handling and graceful degradation

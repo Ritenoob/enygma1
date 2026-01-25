@@ -1,316 +1,362 @@
 // ============================================================================
 // LiveOptimizerController Tests
+// Tests the live strategy optimizer controller for parallel variant testing
 // ============================================================================
 
-const { test, describe } = require('node:test');
+const { test, describe, beforeEach, mock } = require('node:test');
 const assert = require('node:assert');
 const LiveOptimizerController = require('../src/optimizer/LiveOptimizerController');
+const OptimizerConfig = require('../src/optimizer/OptimizerConfig');
 
 describe('LiveOptimizerController', () => {
-  test('initializes with multiple variants', () => {
-    const controller = new LiveOptimizerController();
-    controller.initialize();
-    
-    const status = controller.getStatus();
-    assert.ok(status.initialized, 'Should be initialized');
-    // With parameter testing enabled, we now create 10 variants (limited by maxConcurrentVariants)
-    assert.ok(Object.keys(status.variants).length >= 4, 'Should have at least 4 variants');
-    assert.ok(Object.keys(status.variants).length <= 10, 'Should have at most 10 variants (maxConcurrentVariants)');
-    
-    // Check that we have at least one variant from each main profile
-    const variantIds = Object.keys(status.variants);
-    const hasDefaultVariant = variantIds.some(id => id.includes('default'));
-    const hasAggressiveVariant = variantIds.some(id => id.includes('aggressive'));
-    assert.ok(hasDefaultVariant, 'Should have at least one default variant');
-    assert.ok(hasAggressiveVariant, 'Should have at least one aggressive variant');
-  });
 
-  test('processes market updates and generates signals', () => {
-    const controller = new LiveOptimizerController();
-    
-    // Bullish indicators
-    const indicators = {
-      rsi: 25,
-      williamsR: -85,
-      macd: 5,
-      macdHistogram: 2,
-      ao: 3,
-      ema50: 45000,
-      ema200: 44000,
-      stochK: 15,
-      stochD: 12,
-      price: 45500,
-      bollingerUpper: 46000,
-      bollingerLower: 44000
-    };
-    
-    controller.onMarketUpdate('BTCUSDT', indicators, 50000);
-    
-    const status = controller.getStatus();
-    // At least one variant should have opened a position with strong buy signal
-    let hasPosition = false;
-    for (const variant of Object.values(status.variants)) {
-      if (variant.position) {
-        hasPosition = true;
-        assert.strictEqual(variant.position.side, 'long', 'Should be long position for bullish signal');
-        break;
-      }
-    }
-    assert.ok(hasPosition, 'At least one variant should open a position on strong signal');
-  });
-
-  test('tracks position PnL correctly', () => {
-    const controller = new LiveOptimizerController();
-    
-    // Strong buy signal
-    const indicators = {
-      rsi: 25,
-      williamsR: -85,
-      macd: 5,
-      macdHistogram: 2,
-      ao: 3,
-      ema50: 45000,
-      ema200: 44000,
-      stochK: 15,
-      stochD: 12,
-      price: 45500,
-      bollingerUpper: 46000,
-      bollingerLower: 44000
-    };
-    
-    // Open position
-    controller.onMarketUpdate('BTCUSDT', indicators, 50000);
-    
-    // Price moves up 2%
-    controller.onMarketUpdate('BTCUSDT', indicators, 51000);
-    
-    const status = controller.getStatus();
-    for (const variant of Object.values(status.variants)) {
-      if (variant.position) {
-        assert.ok(variant.position.unrealizedPnl !== undefined, 'Should have unrealized PnL');
-        // For long position with price increase, should be profitable
-        if (variant.position.side === 'long') {
-          assert.ok(variant.position.unrealizedPnl > 0, 'Long position should be profitable on price increase');
-        }
-      }
-    }
-  });
-
-  test('closes position on take profit', () => {
-    const controller = new LiveOptimizerController();
-    
-    // Strong buy signal
-    const indicators = {
-      rsi: 25,
-      williamsR: -85,
-      macd: 5,
-      macdHistogram: 2,
-      ao: 3,
-      ema50: 45000,
-      ema200: 44000,
-      stochK: 15,
-      stochD: 12,
-      price: 45500,
-      bollingerUpper: 46000,
-      bollingerLower: 44000
-    };
-    
-    // Open position
-    controller.onMarketUpdate('BTCUSDT', indicators, 50000);
-    
-    // Get variant with position
-    let variantWithPosition = null;
-    for (const [name, variant] of controller.variants) {
-      if (variant.position) {
-        variantWithPosition = variant;
-        break;
-      }
-    }
-    
-    if (variantWithPosition) {
-      const tpPrice = variantWithPosition.position.takeProfitPrice;
-      
-      // Move price to TP level
-      controller.onMarketUpdate('BTCUSDT', indicators, tpPrice + 10);
-      
-      // Position should be closed
-      assert.strictEqual(variantWithPosition.position, null, 'Position should be closed at TP');
-      assert.strictEqual(variantWithPosition.metrics.tradesCount, 1, 'Should have 1 completed trade');
-    }
-  });
-
-  test('closes position on stop loss', () => {
-    const controller = new LiveOptimizerController();
-    
-    // Strong buy signal
-    const indicators = {
-      rsi: 25,
-      williamsR: -85,
-      macd: 5,
-      macdHistogram: 2,
-      ao: 3,
-      ema50: 45000,
-      ema200: 44000,
-      stochK: 15,
-      stochD: 12,
-      price: 45500,
-      bollingerUpper: 46000,
-      bollingerLower: 44000
-    };
-    
-    // Open position
-    controller.onMarketUpdate('BTCUSDT', indicators, 50000);
-    
-    // Get variant with position
-    let variantWithPosition = null;
-    for (const [name, variant] of controller.variants) {
-      if (variant.position) {
-        variantWithPosition = variant;
-        break;
-      }
-    }
-    
-    if (variantWithPosition) {
-      const slPrice = variantWithPosition.position.stopLossPrice;
-      
-      // Move price to SL level
-      controller.onMarketUpdate('BTCUSDT', indicators, slPrice - 10);
-      
-      // Position should be closed
-      assert.strictEqual(variantWithPosition.position, null, 'Position should be closed at SL');
-      assert.strictEqual(variantWithPosition.metrics.tradesCount, 1, 'Should have 1 completed trade');
-    }
-  });
-
-  test('updates metrics after trade closes', () => {
-    const controller = new LiveOptimizerController();
-    
-    const indicators = {
-      rsi: 25,
-      williamsR: -85,
-      macd: 5,
-      macdHistogram: 2,
-      ao: 3,
-      ema50: 45000,
-      ema200: 44000,
-      stochK: 15,
-      stochD: 12,
-      price: 45500,
-      bollingerUpper: 46000,
-      bollingerLower: 44000
-    };
-    
-    // Open and close a position
-    controller.onMarketUpdate('BTCUSDT', indicators, 50000);
-    
-    let variantWithPosition = null;
-    for (const [name, variant] of controller.variants) {
-      if (variant.position) {
-        variantWithPosition = variant;
-        break;
-      }
-    }
-    
-    if (variantWithPosition) {
-      const tpPrice = variantWithPosition.position.takeProfitPrice;
-      controller.onMarketUpdate('BTCUSDT', indicators, tpPrice + 10);
-      
-      // Check metrics updated
-      assert.strictEqual(variantWithPosition.metrics.tradesCount, 1, 'Should have 1 trade');
-      assert.ok(variantWithPosition.metrics.totalNetPnl !== 0, 'Should have non-zero net PnL');
-      assert.ok(variantWithPosition.metrics.avgPnLPerTrade !== 0, 'Should have non-zero avg PnL');
-      assert.ok(variantWithPosition.tradeHistory.length === 1, 'Should have 1 trade in history');
-    }
-  });
-
-  test('provides performance comparison between variants', () => {
-    const controller = new LiveOptimizerController();
-    controller.initialize();
-    
-    const comparison = controller.getPerformanceComparison();
-    
-    assert.ok(Array.isArray(comparison), 'Should return array');
-    // With parameter testing enabled, we now have up to 10 variants
-    assert.ok(comparison.length >= 4, 'Should have at least 4 variants');
-    assert.ok(comparison.length <= 10, 'Should have at most 10 variants');
-    assert.ok(comparison[0].profile, 'Should have profile name');
-    assert.ok(comparison[0].variantId, 'Should have variant ID');
-    assert.ok(comparison[0].winRate !== undefined, 'Should have win rate');
-    assert.ok(comparison[0].totalNetPnl !== undefined, 'Should have total net PnL');
-    assert.ok(comparison[0].sharpeRatio !== undefined, 'Should have Sharpe ratio');
-  });
-
-  test('maintains variant isolation', () => {
-    const controller = new LiveOptimizerController();
-    
-    const indicators = {
-      rsi: 25,
-      williamsR: -85,
-      macd: 5,
-      macdHistogram: 2,
-      ao: 3,
-      ema50: 45000,
-      ema200: 44000,
-      stochK: 15,
-      stochD: 12,
-      price: 45500,
-      bollingerUpper: 46000,
-      bollingerLower: 44000
-    };
-    
-    controller.onMarketUpdate('BTCUSDT', indicators, 50000);
-    
-    // Each variant should have independent state
-    const variantStates = [];
-    for (const [name, variant] of controller.variants) {
-      variantStates.push({
-        name,
-        hasPosition: variant.position !== null,
-        metrics: { ...variant.metrics }
-      });
-    }
-    
-    // Variants should have different profiles
-    const profileNames = variantStates.map(v => v.name);
-    assert.strictEqual(new Set(profileNames).size, profileNames.length, 'Variants should have unique profiles');
-  });
-
-  test('respects paper trading mode', () => {
-    const controller = new LiveOptimizerController({
-      ...LiveOptimizerController.OptimizerConfig,
-      paperTrading: true
+  describe('Initialization', () => {
+    test('creates controller with default config', () => {
+      const controller = new LiveOptimizerController();
+      assert.ok(controller, 'Controller should be created');
+      assert.strictEqual(controller.running, false, 'Should not be running initially');
+      assert.ok(controller.variants instanceof Map, 'variants should be a Map');
+      assert.ok(controller.variantMetrics instanceof Map, 'variantMetrics should be a Map');
     });
-    
-    const status = controller.getStatus();
-    assert.strictEqual(status.paperTrading, true, 'Should be in paper trading mode');
+
+    test('creates controller with custom config', () => {
+      const customConfig = {
+        ...OptimizerConfig,
+        experiments: {
+          ...OptimizerConfig.experiments,
+          maxConcurrent: 5
+        }
+      };
+      const controller = new LiveOptimizerController(customConfig);
+      assert.ok(controller, 'Controller should be created with custom config');
+      assert.strictEqual(controller.config.experiments.maxConcurrent, 5);
+    });
   });
 
-  test('can reset state', () => {
-    const controller = new LiveOptimizerController();
-    controller.initialize();
-    
-    // Open some positions
-    const indicators = {
-      rsi: 25,
-      williamsR: -85,
-      macd: 5,
-      macdHistogram: 2,
-      ao: 3,
-      ema50: 45000,
-      ema200: 44000,
-      stochK: 15,
-      stochD: 12,
-      price: 45500,
-      bollingerUpper: 46000,
-      bollingerLower: 44000
-    };
-    controller.onMarketUpdate('BTCUSDT', indicators, 50000);
-    
-    // Reset
-    controller.reset();
-    
-    const status = controller.getStatus();
-    assert.strictEqual(status.initialized, false, 'Should not be initialized after reset');
-    assert.strictEqual(status.accountBalance, 10000, 'Should reset account balance');
+  describe('Start/Stop Lifecycle', () => {
+    test('start() initializes variants and sets running state', async () => {
+      const controller = new LiveOptimizerController();
+
+      const result = await controller.start({ maxVariants: 3 });
+
+      assert.ok(result.success, 'start should return success');
+      assert.strictEqual(controller.running, true, 'Should be running after start');
+      assert.ok(result.variantCount > 0, 'Should have variants');
+      assert.ok(Array.isArray(result.variants), 'Should return variant list');
+
+      // Cleanup
+      await controller.stop();
+    });
+
+    test('start() throws if already running', async () => {
+      const controller = new LiveOptimizerController();
+      await controller.start({ maxVariants: 2 });
+
+      await assert.rejects(
+        async () => await controller.start(),
+        /already running/i,
+        'Should throw if already running'
+      );
+
+      // Cleanup
+      await controller.stop();
+    });
+
+    test('stop() returns results and stops running', async () => {
+      const controller = new LiveOptimizerController();
+      await controller.start({ maxVariants: 2 });
+
+      const result = await controller.stop();
+
+      assert.ok(result.success, 'stop should return success');
+      assert.strictEqual(controller.running, false, 'Should not be running after stop');
+      assert.ok(result.finalResults, 'Should have final results');
+    });
+
+    test('stop() returns failure if not running', async () => {
+      const controller = new LiveOptimizerController();
+
+      const result = await controller.stop();
+
+      assert.strictEqual(result.success, false, 'Should return failure');
+      assert.ok(result.message, 'Should have message');
+    });
+  });
+
+  describe('Variant Management', () => {
+    test('initializeVariant creates variant state and metrics', async () => {
+      const controller = new LiveOptimizerController();
+
+      const experiment = {
+        id: 'test_variant_1',
+        profile: 'default',
+        timeframe: '5m'
+      };
+
+      controller.initializeVariant(experiment);
+
+      assert.ok(controller.variants.has('test_variant_1'), 'Variant should be added');
+      assert.ok(controller.variantMetrics.has('test_variant_1'), 'Metrics should be added');
+
+      const variant = controller.variants.get('test_variant_1');
+      assert.strictEqual(variant.status, 'active', 'Variant should be active');
+      assert.ok(Array.isArray(variant.trades), 'Should have trades array');
+      assert.ok(Array.isArray(variant.positions), 'Should have positions array');
+    });
+
+    test('stopVariant marks variant as stopped', async () => {
+      const controller = new LiveOptimizerController();
+      await controller.start({ maxVariants: 2 });
+
+      const variantId = controller.activeExperiments[0].id;
+      controller.stopVariant(variantId, 'Test stop');
+
+      const variant = controller.variants.get(variantId);
+      assert.strictEqual(variant.status, 'stopped', 'Variant should be stopped');
+      assert.ok(controller.stoppedVariants.has(variantId), 'Should be in stopped set');
+
+      await controller.stop();
+    });
+  });
+
+  describe('Status and Results', () => {
+    test('getStatus returns current optimizer state', async () => {
+      const controller = new LiveOptimizerController();
+      await controller.start({ maxVariants: 3 });
+
+      const status = controller.getStatus();
+
+      assert.strictEqual(status.running, true, 'Should show running');
+      assert.ok(status.activeVariants >= 0, 'Should show active variants count');
+      assert.ok(status.stoppedVariants >= 0, 'Should show stopped variants count');
+      assert.ok(status.totalTrades >= 0, 'Should show total trades');
+      assert.ok(status.summary, 'Should have summary');
+
+      await controller.stop();
+    });
+
+    test('getResults returns ranked variants', async () => {
+      const controller = new LiveOptimizerController();
+      await controller.start({ maxVariants: 3 });
+
+      const results = controller.getResults();
+
+      assert.ok(Array.isArray(results.variants), 'Should have variants array');
+      assert.ok(Array.isArray(results.topPerformers), 'Should have top performers');
+      assert.ok(results.summary, 'Should have summary');
+
+      await controller.stop();
+    });
+
+    test('exportResults returns complete snapshot', async () => {
+      const controller = new LiveOptimizerController();
+      await controller.start({ maxVariants: 2 });
+
+      const exported = controller.exportResults();
+
+      assert.ok(exported.timestamp, 'Should have timestamp');
+      assert.ok(exported.status, 'Should have status');
+      assert.ok(exported.results, 'Should have results');
+      assert.ok(exported.telemetry, 'Should have telemetry');
+
+      await controller.stop();
+    });
+  });
+
+  describe('Price Processing', () => {
+    test('processPriceTick updates variant positions', async () => {
+      const controller = new LiveOptimizerController();
+      await controller.start({ maxVariants: 2 });
+
+      // Process a price tick
+      const tick = { price: 50000, timestamp: Date.now() };
+      await controller.processPriceTick(tick);
+
+      assert.strictEqual(controller.lastPrice, 50000, 'Should update last price');
+
+      await controller.stop();
+    });
+
+    test('processPriceTick skips when not running', async () => {
+      const controller = new LiveOptimizerController();
+
+      const tick = { price: 50000, timestamp: Date.now() };
+      await controller.processPriceTick(tick);
+
+      assert.strictEqual(controller.lastPrice, null, 'Should not update price when not running');
+    });
+  });
+
+  describe('Safety Mechanisms', () => {
+    test('checkSafetyLimits stops variant on max loss', async () => {
+      const controller = new LiveOptimizerController();
+      await controller.start({ maxVariants: 2 });
+
+      const variantId = controller.activeExperiments[0].id;
+      const metrics = controller.variantMetrics.get(variantId);
+
+      // Simulate exceeding max loss
+      metrics.roi = -10; // Exceeds default maxLossPerVariant (5%)
+
+      controller.checkSafetyLimits(variantId);
+
+      const variant = controller.variants.get(variantId);
+      assert.strictEqual(variant.status, 'stopped', 'Variant should be stopped');
+
+      await controller.stop();
+    });
+
+    test('checkSafetyLimits stops variant on max drawdown', async () => {
+      const controller = new LiveOptimizerController();
+      await controller.start({ maxVariants: 2 });
+
+      const variantId = controller.activeExperiments[0].id;
+      const metrics = controller.variantMetrics.get(variantId);
+
+      // Simulate exceeding max drawdown
+      metrics.maxDrawdown = 15; // Exceeds default maxDrawdownPercent (10%)
+
+      controller.checkSafetyLimits(variantId);
+
+      const variant = controller.variants.get(variantId);
+      assert.strictEqual(variant.status, 'stopped', 'Variant should be stopped');
+
+      await controller.stop();
+    });
+  });
+
+  describe('Rate Limiting', () => {
+    test('throttleApiCall respects rate limits', async () => {
+      const controller = new LiveOptimizerController();
+
+      const startTime = Date.now();
+      await controller.throttleApiCall();
+      await controller.throttleApiCall();
+      const endTime = Date.now();
+
+      // Second call should be throttled
+      assert.ok(endTime - startTime >= controller.config.rateLimiting.throttleDelay - 10,
+        'Should throttle API calls');
+    });
+  });
+
+  describe('Promotion', () => {
+    test('promoteVariant rejects variant not found', async () => {
+      const controller = new LiveOptimizerController();
+      await controller.start({ maxVariants: 2 });
+
+      await assert.rejects(
+        async () => await controller.promoteVariant('nonexistent_variant'),
+        /not found/i,
+        'Should throw for nonexistent variant'
+      );
+
+      await controller.stop();
+    });
+
+    test('promoteVariant checks promotion gates', async () => {
+      const controller = new LiveOptimizerController();
+      await controller.start({ maxVariants: 2 });
+
+      const variantId = controller.activeExperiments[0].id;
+      const result = await controller.promoteVariant(variantId);
+
+      // Should fail gates since no trades have been made
+      assert.strictEqual(result.success, false, 'Should not promote without meeting gates');
+      assert.ok(result.checks, 'Should have checks details');
+
+      await controller.stop();
+    });
+  });
+
+  describe('Event Emission', () => {
+    test('emits optimizer:started on start', async () => {
+      const controller = new LiveOptimizerController();
+
+      let eventEmitted = false;
+      controller.on('optimizer:started', () => {
+        eventEmitted = true;
+      });
+
+      await controller.start({ maxVariants: 2 });
+
+      assert.ok(eventEmitted, 'Should emit optimizer:started event');
+
+      await controller.stop();
+    });
+
+    test('emits optimizer:stopped on stop', async () => {
+      const controller = new LiveOptimizerController();
+      await controller.start({ maxVariants: 2 });
+
+      let eventEmitted = false;
+      controller.on('optimizer:stopped', () => {
+        eventEmitted = true;
+      });
+
+      await controller.stop();
+
+      assert.ok(eventEmitted, 'Should emit optimizer:stopped event');
+    });
+
+    test('emits variant:stopped when variant is stopped', async () => {
+      const controller = new LiveOptimizerController();
+      await controller.start({ maxVariants: 2 });
+
+      let eventEmitted = false;
+      let eventData = null;
+      controller.on('variant:stopped', (data) => {
+        eventEmitted = true;
+        eventData = data;
+      });
+
+      const variantId = controller.activeExperiments[0].id;
+      controller.stopVariant(variantId, 'Test reason');
+
+      assert.ok(eventEmitted, 'Should emit variant:stopped event');
+      assert.strictEqual(eventData.variantId, variantId, 'Event should have variantId');
+      assert.strictEqual(eventData.reason, 'Test reason', 'Event should have reason');
+
+      await controller.stop();
+    });
+  });
+
+  describe('Metrics Calculation', () => {
+    test('calculateSharpeRatio returns 0 with insufficient data', async () => {
+      const controller = new LiveOptimizerController();
+      await controller.start({ maxVariants: 2 });
+
+      const variantId = controller.activeExperiments[0].id;
+      const sharpe = controller.calculateSharpeRatio(variantId);
+
+      assert.strictEqual(sharpe, 0, 'Sharpe should be 0 with no trades');
+
+      await controller.stop();
+    });
+
+    test('updateMetrics correctly updates after trade', async () => {
+      const controller = new LiveOptimizerController();
+      await controller.start({ maxVariants: 2 });
+
+      const variantId = controller.activeExperiments[0].id;
+      const variant = controller.variants.get(variantId);
+
+      // Simulate a closed trade
+      const trade = {
+        status: 'closed',
+        realizedPnL: 100
+      };
+      variant.trades.push(trade);
+
+      controller.updateMetrics(variantId, trade);
+
+      const metrics = controller.variantMetrics.get(variantId);
+      assert.strictEqual(metrics.totalTrades, 1, 'Should have 1 trade');
+      assert.strictEqual(metrics.totalPnL, 100, 'Should have correct PnL');
+      assert.strictEqual(metrics.winningTrades, 1, 'Should count as win');
+      assert.strictEqual(metrics.winRate, 1, 'Should have 100% win rate');
+
+      await controller.stop();
+    });
   });
 });

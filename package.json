@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node --test",
+    "test": "node --test 'tests/*.test.js'",
     "test:rate-limit": "node --test tests/pingBudgetManager*.test.js",
     "research:fetch-ohlcv": "ts-node research/scripts/fetch-data.ts",
     "research:backtest": "ts-node research/scripts/run-backtest.ts",

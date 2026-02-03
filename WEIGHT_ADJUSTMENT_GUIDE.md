@@ -2,9 +2,9 @@
 
 ## Overview
 
-MIRKO V3.5 uses a weighted scoring system to generate trading signals. Each technical indicator contributes a score based on its current value, and these scores are summed to produce a final signal.
+This guide is written so it applies to **any AI-driven CLI workflow**, not just this trading stack. The same tuning concepts can be reused for AI model prompts, scoring pipelines, or automation agents where you need to optimize weights, thresholds, or other parameters and then build the system end-to-end. MIRKO V3.5 uses a weighted scoring system to generate trading signals. Each technical indicator contributes a score based on its current value, and these scores are summed to produce a final signal.
 
-This guide explains how to tune indicator weights to optimize performance for different market conditions.
+Use the steps here to fully optimize your AI (or any AI CLI) by iterating on parameters, validating outcomes, and exporting configurations that can be plugged directly into your build/deploy process. This guide explains how to tune indicator weights to optimize performance for different market conditions.
 
 ## Weight Configuration
 
